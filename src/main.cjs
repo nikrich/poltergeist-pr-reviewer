@@ -26,13 +26,28 @@ function expandHome(p) {
   return p.startsWith('~') ? path.join(os.homedir(), p.slice(1)) : p;
 }
 
+// GUI-launched Electron apps get launchd's minimal PATH (/usr/bin:/bin:...),
+// which lacks the dirs gh and claude are installed to — PATH lookup then fails
+// with ENOENT even though both work in a terminal.
+const EXTRA_PATH_DIRS = ['/opt/homebrew/bin', '/usr/local/bin', path.join(os.homedir(), '.local', 'bin')];
+
+function augmentedPath(base) {
+  const parts = String(base ?? '')
+    .split(path.delimiter)
+    .filter(Boolean);
+  for (const d of EXTRA_PATH_DIRS) if (!parts.includes(d)) parts.push(d);
+  return parts.join(path.delimiter);
+}
+
 /** Never rejects: nonzero exit / spawn error → code !== 0. */
 function execP(cmd, args, opts = {}) {
+  const env = { ...(opts.env ?? process.env) };
+  env.PATH = augmentedPath(env.PATH);
   return new Promise((resolve) => {
     const child = execFile(
       cmd,
       args,
-      { maxBuffer: 16 * 1024 * 1024, timeout: opts.timeout, cwd: opts.cwd, env: opts.env },
+      { maxBuffer: 16 * 1024 * 1024, timeout: opts.timeout, cwd: opts.cwd, env },
       (err, stdout, stderr) => resolve({ code: err ? (typeof err.code === 'number' ? err.code : 1) : 0, stdout: String(stdout), stderr: String(stderr) })
     );
     if (opts.input != null && child.stdin) child.stdin.end(opts.input);
@@ -378,4 +393,4 @@ function deactivate() {
   timer = null;
 }
 
-module.exports = { activate, deactivate, createHandlers };
+module.exports = { activate, deactivate, createHandlers, augmentedPath };
