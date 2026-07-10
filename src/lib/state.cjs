@@ -57,7 +57,7 @@ function recoverInterrupted(store, nowIso) {
   let n = 0;
   for (const pr of Object.values(store.prs)) {
     if (pr.state === 'reviewing') {
-      transition(store, pr.key, 'detected', nowIso);
+      transition(store, pr.key, 'detected', nowIso, { error: null });
       n++;
     }
   }
@@ -65,9 +65,15 @@ function recoverInterrupted(store, nowIso) {
 }
 
 async function loadStore(file) {
+  let raw;
   try {
-    const parsed = JSON.parse(await fsp.readFile(file, 'utf8'));
-    return { ...emptyStore(), ...parsed };
+    raw = await fsp.readFile(file, 'utf8');
+  } catch (err) {
+    if (err.code === 'ENOENT') return emptyStore();
+    throw err;
+  }
+  try {
+    return { ...emptyStore(), ...JSON.parse(raw) };
   } catch {
     return emptyStore();
   }

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -54,8 +54,10 @@ test('recoverInterrupted resets reviewing PRs', () => {
   const store = emptyStore();
   upsertDetected(store, ref, 'n.md', NOW);
   transition(store, 'a/b#1', 'reviewing', NOW);
+  store.prs['a/b#1'].error = 'stale';
   assert.equal(recoverInterrupted(store, NOW), 1);
   assert.equal(store.prs['a/b#1'].state, 'detected');
+  assert.equal(store.prs['a/b#1'].error, null);
   assert.equal(recoverInterrupted(store, NOW), 0);
 });
 
@@ -75,4 +77,15 @@ test('loadStore/saveStore round-trip, missing and corrupt files → empty', asyn
   const { writeFile } = await import('node:fs/promises');
   await writeFile(file, '{not json');
   assert.deepEqual(await loadStore(file), emptyStore());
+});
+
+test('loadStore rethrows non-ENOENT read errors', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'prrev-'));
+  const file = path.join(dir, 'state.json');
+  const store = emptyStore();
+  upsertDetected(store, ref, 'n.md', NOW);
+  await saveStore(file, store);
+  await chmod(file, 0o000);
+  await assert.rejects(loadStore(file));
+  await chmod(file, 0o600);
 });
