@@ -19,9 +19,9 @@ Only include findings you are confident in. Use "findings": [] when there are no
 const RETRY_SUFFIX =
   '\n\nYour previous reply was not a single valid JSON object. Reply again with ONLY the JSON object described above.';
 
-// Read/explore + gh read-only. No write, no push, no arbitrary shell.
-const ALLOWED_TOOLS =
-  'Read Glob Grep LS Bash(git log:*) Bash(git diff:*) Bash(git show:*) Bash(gh pr view:*) Bash(gh pr diff:*)';
+// Read/explore + gh PR read commands. No git Bash: `git log/diff/show` accept
+// --output=<file>, which can write arbitrary files under prompt injection.
+const ALLOWED_TOOLS = 'Read Glob Grep LS Bash(gh pr view:*) Bash(gh pr diff:*)';
 
 function buildPrompt(engine = {}, pr) {
   let core;

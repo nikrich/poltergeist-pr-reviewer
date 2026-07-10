@@ -1,7 +1,7 @@
 // Queue + approval + history. Pull state on mount, re-pull on pushed
 // state:changed events (ipc.send is never queued by the host).
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Panel, ErrorBanner, Btn, Pill, inputStyle } from '../kit.jsx';
 
 const ORDER = ['awaiting_approval', 'reviewing', 'detected', 'failed', 'submitted', 'skipped', 'dismissed'];
@@ -53,6 +53,14 @@ function Finding({ s, f, onEdit, onDelete, disabled }) {
 function PrCard({ api, s, pr, refresh, setError }) {
   const [busy, setBusy] = useState(false);
   const [summary, setSummary] = useState(pr.draft?.summary ?? '');
+  const lastDraftSummary = useRef(pr.draft?.summary ?? '');
+  useEffect(() => {
+    const ds = pr.draft?.summary ?? '';
+    if (ds !== lastDraftSummary.current) {
+      lastDraftSummary.current = ds;
+      setSummary(ds);
+    }
+  }, [pr.draft?.summary]);
 
   const act = async (channel, payload = {}) => {
     setBusy(true);

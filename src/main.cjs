@@ -67,6 +67,7 @@ function createHandlers(ctx, deps = {}) {
   const exec = deps.exec ?? execP;
   const notify = deps.notify ?? notifyDefault;
   const now = deps.now ?? (() => new Date().toISOString());
+  const isStopped = deps.isStopped ?? (() => false);
   const runClaude =
     deps.runClaude ??
     (async ({ bin, prompt, cwd, timeoutMs, env }) => {
@@ -133,12 +134,15 @@ function createHandlers(ctx, deps = {}) {
   function kickQueue() {
     if (!queueRun) {
       queueRun = (async () => {
+        const attempted = new Set();
         for (;;) {
+          if (isStopped()) break;
           const store = await loadStore(storeFile);
           const next = Object.values(store.prs)
-            .filter((p) => p.state === 'detected')
+            .filter((p) => p.state === 'detected' && !attempted.has(p.key))
             .sort((a, b) => (a.timestamps.detected < b.timestamps.detected ? -1 : 1))[0];
           if (!next) break;
+          attempted.add(next.key);
           await reviewOne(next.key);
         }
       })().finally(() => {
@@ -152,6 +156,7 @@ function createHandlers(ctx, deps = {}) {
     const cfg = await config();
     let store = await loadStore(storeFile);
     const pr = store.prs[key];
+    if (!pr || pr.state !== 'detected') return;
     const repoKey = `${pr.owner}/${pr.repo}`;
 
     // Resolve account + PR meta before committing to a review.
@@ -159,9 +164,7 @@ function createHandlers(ctx, deps = {}) {
     try {
       resolved = await resolveAccount(exec, pr.owner, pr.repo, { preferLogin: store.accountCache[repoKey] });
     } catch (err) {
-      transition(store, key, 'skipped', now(), { error: err.message });
-      await saveStore(storeFile, store);
-      pushChanged();
+      ctx.log(`account enumeration failed for ${key}: ${err.message}`);
       return;
     }
     if (!resolved) {
@@ -320,7 +323,12 @@ function createHandlers(ctx, deps = {}) {
       if (r.code !== 0 && /422/.test(r.stderr + r.stdout)) r = await post(foldAllPayload(pr.draft));
       if (r.code !== 0) throw new Error(`submit failed: ${(r.stderr || r.stdout).slice(-1000)}`);
 
-      const reviewUrl = JSON.parse(r.stdout).html_url ?? pr.url;
+      let reviewUrl = pr.url;
+      try {
+        reviewUrl = JSON.parse(r.stdout).html_url ?? pr.url;
+      } catch {
+        ctx.log('review posted but response was not JSON; falling back to PR url');
+      }
       transition(store, key, 'submitted', now(), { reviewUrl });
       await saveStore(storeFile, store);
       pushChanged();
@@ -343,13 +351,12 @@ let timer = null;
 
 function activate(ctx) {
   stopped = false;
-  const plugin = createHandlers(ctx);
+  const plugin = createHandlers(ctx, { isStopped: () => stopped });
   for (const [channel, fn] of Object.entries(plugin.handlers)) ctx.ipc.handle(channel, fn);
 
   async function loop() {
     if (stopped) return;
     try {
-      await plugin.recover();
       await plugin.sweep();
       await plugin.kickQueue();
     } catch (err) {
@@ -358,7 +365,11 @@ function activate(ctx) {
     const cfg = { ...DEFAULT_CONFIG, ...((await ctx.settings.get('config')) ?? {}) };
     if (!stopped) timer = setTimeout(loop, Math.max(1, Number(cfg.pollMinutes) || 3) * 60_000);
   }
-  loop().catch((err) => ctx.log('initial sweep failed:', err.message));
+
+  plugin
+    .recover()
+    .catch((err) => ctx.log('recovery failed:', err.message))
+    .finally(() => loop().catch((err) => ctx.log('initial sweep failed:', err.message)));
 }
 
 function deactivate() {

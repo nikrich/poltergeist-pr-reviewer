@@ -212,6 +212,50 @@ test('submit falls back to folded payload on 422', async () => {
   assert.equal((await loadStore(storeFile)).prs['a/b#7'].state, 'submitted');
 });
 
+test('submit tolerates a non-JSON success response and still stores the PR url', async () => {
+  const { plugin, storeFile } = await makePlugin({
+    'gh api': (args) => {
+      if (args[1] === 'repos/a/b') return { code: 0, stdout: '{}', stderr: '' };
+      if (args[1] === 'repos/a/b/pulls/7')
+        return { code: 0, stdout: JSON.stringify({ title: 'Fix', state: 'open', merged: false }), stderr: '' };
+      if (args[1] === 'repos/a/b/pulls/7/reviews')
+        return { code: 0, stdout: 'Success (non-JSON banner)', stderr: '' };
+      return { code: 1, stdout: '', stderr: 'no route' };
+    },
+  });
+  await plugin.handlers['sweep:now']();
+  await plugin.kickQueue();
+  await plugin.handlers['review:submit']({ key: 'a/b#7' });
+
+  const pr = (await loadStore(storeFile)).prs['a/b#7'];
+  assert.equal(pr.state, 'submitted');
+  assert.equal(pr.reviewUrl, 'https://github.com/a/b/pull/7');
+});
+
+test('transient gh auth failure leaves PR detected (retried later), drain does not spin forever', async () => {
+  const { plugin, storeFile } = await makePlugin({
+    'gh auth': () => ({ code: 1, stdout: '', stderr: 'keyring locked' }),
+  });
+  await plugin.handlers['sweep:now']();
+  await plugin.kickQueue();
+
+  const pr = (await loadStore(storeFile)).prs['a/b#7'];
+  assert.equal(pr.state, 'detected');
+});
+
+test('reviewOne is a no-op once the PR has left detected (e.g. dismissed while queued)', async () => {
+  const { plugin, storeFile, exec } = await makePlugin();
+  // Use sweep() directly (not the sweep:now handler) so it doesn't also kick
+  // the queue in the background — keeps this test's ordering deterministic.
+  await plugin.sweep();
+  await plugin.handlers['review:dismiss']({ key: 'a/b#7' });
+  await plugin.kickQueue();
+
+  const pr = (await loadStore(storeFile)).prs['a/b#7'];
+  assert.equal(pr.state, 'dismissed');
+  assert.ok(exec.calls.every((c) => c.args[1] !== 'clone'));
+});
+
 test('env:check reports tool availability', async () => {
   const { plugin } = await makePlugin({
     'claude --version': () => ({ code: 0, stdout: '2.0.0', stderr: '' }),
