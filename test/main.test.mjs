@@ -264,3 +264,27 @@ test('env:check reports tool availability', async () => {
   const env = await plugin.handlers['env:check']();
   assert.deepEqual(env, { claude: true, gh: true, accounts: 1 });
 });
+
+test('augmentedPath appends CLI install dirs missing from a minimal GUI PATH', async () => {
+  const { augmentedPath } = require('../src/main.cjs');
+  const os = await import('node:os');
+  const home = os.homedir();
+
+  // launchd's default GUI PATH lacks homebrew and ~/.local/bin
+  const gui = augmentedPath('/usr/bin:/bin:/usr/sbin:/sbin');
+  const parts = gui.split(':');
+  assert.ok(parts.includes('/opt/homebrew/bin'));
+  assert.ok(parts.includes('/usr/local/bin'));
+  assert.ok(parts.includes(`${home}/.local/bin`));
+  // existing entries preserved, in order, ahead of the additions
+  assert.ok(parts.indexOf('/usr/bin') < parts.indexOf('/opt/homebrew/bin'));
+
+  // no duplicates when the dirs are already present
+  const full = augmentedPath(gui);
+  assert.equal(full, gui);
+  assert.equal(full.split(':').filter((p) => p === '/opt/homebrew/bin').length, 1);
+
+  // empty/undefined base still yields the extras
+  assert.ok(augmentedPath('').split(':').includes('/opt/homebrew/bin'));
+  assert.ok(augmentedPath(undefined).split(':').includes('/opt/homebrew/bin'));
+});
