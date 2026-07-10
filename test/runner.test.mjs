@@ -49,6 +49,12 @@ test('parseReviewOutput accepts bare, fenced, and embedded JSON', () => {
   assert.deepEqual(parseReviewOutput('preamble ' + JSON.stringify(GOOD) + ' trailing'), GOOD);
 });
 
+test('parseReviewOutput survives stray braces and decoy objects in prose', () => {
+  assert.deepEqual(parseReviewOutput('as discussed {see notes} here it is: ' + JSON.stringify(GOOD) + ' done.'), GOOD);
+  assert.deepEqual(parseReviewOutput(JSON.stringify(GOOD) + '\nfootnote: unbalanced }'), GOOD);
+  assert.deepEqual(parseReviewOutput('empty decoy {} first, then ' + JSON.stringify(GOOD)), GOOD);
+});
+
 test('parseReviewOutput validates shape and coerces severity', () => {
   assert.throws(() => parseReviewOutput('no json here'), /no JSON object/);
   assert.throws(() => parseReviewOutput('{"findings": []}'), /summary/);

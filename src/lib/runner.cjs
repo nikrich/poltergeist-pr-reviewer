@@ -50,6 +50,27 @@ function parseClaudeCliOutput(stdout) {
   return o.result;
 }
 
+/** Slice one balanced {...} starting at `from`, respecting JSON strings. */
+function balancedJsonSlice(text, from) {
+  let depth = 0, inStr = false, esc = false;
+  for (let i = from; i < text.length; i++) {
+    const c = text[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === '\\') esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') inStr = true;
+    else if (c === '{') depth++;
+    else if (c === '}') {
+      depth--;
+      if (depth === 0) return text.slice(from, i + 1);
+    }
+  }
+  return null;
+}
+
 function extractJson(text) {
   try {
     return JSON.parse(text);
@@ -60,14 +81,19 @@ function extractJson(text) {
       return JSON.parse(fence[1]);
     } catch {}
   }
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start >= 0 && end > start) {
+  let fallback = null;
+  for (let idx = text.indexOf('{'); idx !== -1; idx = text.indexOf('{', idx + 1)) {
+    const candidate = balancedJsonSlice(text, idx);
+    if (!candidate) continue;
     try {
-      return JSON.parse(text.slice(start, end + 1));
+      const obj = JSON.parse(candidate);
+      if (obj && typeof obj === 'object') {
+        if (typeof obj.summary === 'string') return obj;
+        if (!fallback) fallback = obj;
+      }
     } catch {}
   }
-  return null;
+  return fallback;
 }
 
 /** Validate the review contract; throws with a specific reason. */
