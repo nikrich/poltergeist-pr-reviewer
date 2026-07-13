@@ -8,6 +8,7 @@ const DEFAULT_CONFIG = {
   vaultPath: '~/ghostbrain/vault',
   folders: ['00-inbox', '20-contexts'],
   pollMinutes: 3,
+  lookbackDays: 14,
   engine: { prompt: '', thoroughness: 'standard', skill: '' },
   claudeBin: 'claude',
   timeoutMinutes: 15,
@@ -60,6 +61,13 @@ export function SettingsTab({ api, s }) {
           type="number"
           value={String(config.pollMinutes)}
           onChange={(v) => set({ pollMinutes: Math.max(1, Number(v) || 3) })}
+        />
+        <Field
+          s={s}
+          label="look back (days, 0 = no limit)"
+          type="number"
+          value={String(config.lookbackDays)}
+          onChange={(v) => set({ lookbackDays: Math.max(0, Number(v) || 0) })}
         />
       </Panel>
 

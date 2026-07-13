@@ -17,6 +17,7 @@ const DEFAULT_CONFIG = {
   vaultPath: '~/ghostbrain/vault',
   folders: ['00-inbox', '20-contexts'],
   pollMinutes: 3,
+  lookbackDays: 14,
   engine: { prompt: '', thoroughness: 'standard', skill: '' },
   claudeBin: 'claude',
   timeoutMinutes: 15,
@@ -113,11 +114,15 @@ function createHandlers(ctx, deps = {}) {
     const vault = expandHome(cfg.vaultPath);
     const files = [];
     for (const sub of cfg.folders) await walkMd(path.join(vault, sub), files);
+    // Rolling window: notes last modified before the cutoff never trigger
+    // reviews; editing an old note brings it back into the window.
+    const days = Number(cfg.lookbackDays);
+    const cutoffMs = days > 0 ? Date.parse(now()) - days * 86_400_000 : -Infinity;
     const withStat = [];
     for (const f of files) {
       try {
         const st = await fsp.stat(f);
-        withStat.push({ path: f, mtimeMs: st.mtimeMs });
+        if (st.mtimeMs >= cutoffMs) withStat.push({ path: f, mtimeMs: st.mtimeMs });
       } catch {}
     }
     const store = await loadStore(storeFile);
