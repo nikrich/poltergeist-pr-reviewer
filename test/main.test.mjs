@@ -319,3 +319,24 @@ test('lookbackDays 0 disables the age filter', async () => {
   assert.ok(store.prs['c/d#9']); // detected despite age
   assert.equal(res.newPrs, 2);
 });
+
+test('queue:dismiss-all dismisses every detected PR and nothing else', async () => {
+  const { plugin, storeFile, dir } = await makePlugin();
+  // a/b#7 goes through the full pipeline to awaiting_approval
+  await plugin.handlers['sweep:now']();
+  await plugin.kickQueue();
+  // two more PRs land as detected (sweep only, no queue kick)
+  await writeFile(path.join(dir, 'vault', 'notes', 'more.md'), 'see https://github.com/c/d/pull/9 and https://github.com/e/f/pull/2');
+  await plugin.sweep();
+
+  const res = await plugin.handlers['queue:dismiss-all']();
+  assert.equal(res.dismissed, 2);
+
+  const store = await loadStore(storeFile);
+  assert.equal(store.prs['c/d#9'].state, 'dismissed');
+  assert.equal(store.prs['e/f#2'].state, 'dismissed');
+  assert.equal(store.prs['a/b#7'].state, 'awaiting_approval'); // untouched
+
+  // idempotent: nothing left to dismiss
+  assert.equal((await plugin.handlers['queue:dismiss-all']()).dismissed, 0);
+});

@@ -155,6 +155,7 @@ export function ReviewsTab({ api, s }) {
   const [store, setStore] = useState(null);
   const [env, setEnv] = useState(null);
   const [error, setError] = useState('');
+  const [confirmClear, setConfirmClear] = useState(false);
 
   const refresh = () => api.ipc.invoke('state:get').then(setStore).catch((e) => setError(e.message));
 
@@ -170,6 +171,18 @@ export function ReviewsTab({ api, s }) {
   const prs = Object.values(store.prs).sort(
     (a, b) => ORDER.indexOf(a.state) - ORDER.indexOf(b.state) || (a.timestamps.detected < b.timestamps.detected ? 1 : -1)
   );
+  const queued = prs.filter((p) => p.state === 'detected').length;
+
+  const dismissAll = () => {
+    // dismissed is terminal and dedupe keeps these PRs out for good — arm first
+    if (!confirmClear) {
+      setConfirmClear(true);
+      setTimeout(() => setConfirmClear(false), 4000);
+      return;
+    }
+    setConfirmClear(false);
+    api.ipc.invoke('queue:dismiss-all').then(refresh).catch((e) => setError(e.message));
+  };
 
   const envProblem =
     env && (!env.claude || !env.gh || env.accounts === 0)
@@ -190,9 +203,16 @@ export function ReviewsTab({ api, s }) {
         title={`pull requests (${prs.length})`}
         s={s}
         action={
-          <Btn s={s} onClick={() => api.ipc.invoke('sweep:now').then(refresh).catch((e) => setError(e.message))}>
-            sweep now
-          </Btn>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {queued > 0 && (
+              <Btn s={s} danger onClick={dismissAll}>
+                {confirmClear ? `really dismiss ${queued}?` : `dismiss queued (${queued})`}
+              </Btn>
+            )}
+            <Btn s={s} onClick={() => api.ipc.invoke('sweep:now').then(refresh).catch((e) => setError(e.message))}>
+              sweep now
+            </Btn>
+          </div>
         }
       >
         {prs.length === 0 && <div style={{ color: s.ink2 }}>No PR links found in your vault yet.</div>}

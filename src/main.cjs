@@ -315,6 +315,22 @@ function createHandlers(ctx, deps = {}) {
       return { ok: true };
     },
 
+    'queue:dismiss-all': async () => {
+      const store = await loadStore(storeFile);
+      let dismissed = 0;
+      for (const pr of Object.values(store.prs)) {
+        if (pr.state === 'detected') {
+          transition(store, pr.key, 'dismissed', now());
+          dismissed++;
+        }
+      }
+      if (dismissed) {
+        await saveStore(storeFile, store);
+        pushChanged();
+      }
+      return { dismissed };
+    },
+
     'review:retry': async ({ key }) => {
       const store = await loadStore(storeFile);
       transition(store, key, 'detected', now(), { error: null });
