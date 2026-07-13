@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -61,10 +61,10 @@ async function setupVault(dir) {
   return vault;
 }
 
-async function makePlugin(overrides = {}, claudeResult = REVIEW_JSON) {
+async function makePlugin(overrides = {}, claudeResult = REVIEW_JSON, configPatch = {}) {
   const dir = await mkdtemp(path.join(tmpdir(), 'prrev-main-'));
   const vault = await setupVault(dir);
-  const config = { vaultPath: vault, folders: ['notes'], pollMinutes: 3, engine: { prompt: '', thoroughness: 'standard', skill: '' }, claudeBin: 'claude', timeoutMinutes: 15 };
+  const config = { vaultPath: vault, folders: ['notes'], pollMinutes: 3, engine: { prompt: '', thoroughness: 'standard', skill: '' }, claudeBin: 'claude', timeoutMinutes: 15, ...configPatch };
   const { ctx, sent } = fakeCtx(dir, config);
   const exec = fakeExec(overrides);
   const notifications = [];
@@ -287,4 +287,35 @@ test('augmentedPath appends CLI install dirs missing from a minimal GUI PATH', a
   // empty/undefined base still yields the extras
   assert.ok(augmentedPath('').split(':').includes('/opt/homebrew/bin'));
   assert.ok(augmentedPath(undefined).split(':').includes('/opt/homebrew/bin'));
+});
+
+test('sweep skips notes older than lookbackDays (default 14)', async () => {
+  const { plugin, storeFile, dir } = await makePlugin();
+  const old = path.join(dir, 'vault', 'notes', 'old.md');
+  await writeFile(old, 'ancient mention of https://github.com/c/d/pull/9 here');
+  const past = new Date('2026-05-01T00:00:00Z'); // far before injected now minus 14d
+  await utimes(old, past, past);
+
+  const res = await plugin.handlers['sweep:now']();
+  await plugin.kickQueue();
+
+  const store = await loadStore(storeFile);
+  assert.equal(store.prs['c/d#9'], undefined); // aged out
+  assert.ok(store.prs['a/b#7']); // fresh capture unaffected
+  assert.equal(res.newPrs, 1);
+});
+
+test('lookbackDays 0 disables the age filter', async () => {
+  const { plugin, storeFile, dir } = await makePlugin({}, REVIEW_JSON, { lookbackDays: 0 });
+  const old = path.join(dir, 'vault', 'notes', 'old.md');
+  await writeFile(old, 'ancient mention of https://github.com/c/d/pull/9 here');
+  const past = new Date('2026-05-01T00:00:00Z');
+  await utimes(old, past, past);
+
+  const res = await plugin.handlers['sweep:now']();
+  await plugin.kickQueue();
+
+  const store = await loadStore(storeFile);
+  assert.ok(store.prs['c/d#9']); // detected despite age
+  assert.equal(res.newPrs, 2);
 });
