@@ -156,8 +156,25 @@ export function ReviewsTab({ api, s }) {
   const [env, setEnv] = useState(null);
   const [error, setError] = useState('');
   const [confirmClear, setConfirmClear] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [scanResult, setScanResult] = useState(null); // {newPrs, scanned}
 
   const refresh = () => api.ipc.invoke('state:get').then(setStore).catch((e) => setError(e.message));
+
+  const checkNow = async () => {
+    setScanning(true);
+    setScanResult(null);
+    setError('');
+    try {
+      const res = await api.ipc.invoke('sweep:now');
+      setScanResult(res);
+      await refresh();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setScanning(false);
+    }
+  };
 
   useEffect(() => {
     refresh();
@@ -203,19 +220,33 @@ export function ReviewsTab({ api, s }) {
         title={`pull requests (${prs.length})`}
         s={s}
         action={
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            {scanResult && !scanning && (
+              <span style={{ color: s.ink2, fontSize: 12 }}>
+                {scanResult.newPrs > 0
+                  ? `found ${scanResult.newPrs} new PR${scanResult.newPrs === 1 ? '' : 's'}`
+                  : scanResult.scanned > 0
+                    ? `checked ${scanResult.scanned} changed note${scanResult.scanned === 1 ? '' : 's'} · nothing new`
+                    : 'no notes changed since last check'}
+              </span>
+            )}
             {queued > 0 && (
               <Btn s={s} danger onClick={dismissAll}>
                 {confirmClear ? `really dismiss ${queued}?` : `dismiss queued (${queued})`}
               </Btn>
             )}
-            <Btn s={s} onClick={() => api.ipc.invoke('sweep:now').then(refresh).catch((e) => setError(e.message))}>
-              sweep now
+            <Btn s={s} disabled={scanning} onClick={checkNow}>
+              {scanning ? 'checking…' : 'check for new PRs'}
             </Btn>
           </div>
         }
       >
-        {prs.length === 0 && <div style={{ color: s.ink2 }}>No PR links found in your vault yet.</div>}
+        {prs.length === 0 && (
+          <div style={{ color: s.ink2 }}>
+            No PRs tracked yet. Every few minutes this plugin looks through recently edited notes in your vault for
+            GitHub pull-request links and queues them for review — “check for new PRs” runs one pass right now.
+          </div>
+        )}
         {prs.map((pr) => (
           <PrCard key={pr.key} api={api} s={s} pr={pr} refresh={refresh} setError={setError} />
         ))}
