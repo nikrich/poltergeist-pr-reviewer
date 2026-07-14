@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Panel, ErrorBanner, Btn, Pill, inputStyle } from '../kit.jsx';
 
 const ORDER = ['awaiting_approval', 'reviewing', 'detected', 'failed', 'submitted', 'skipped', 'dismissed'];
+const HIDDEN_STATES = ['dismissed', 'skipped'];
 const LABEL = {
   awaiting_approval: 'awaiting approval',
   reviewing: 'reviewing',
@@ -158,6 +159,7 @@ export function ReviewsTab({ api, s }) {
   const [confirmClear, setConfirmClear] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanResult, setScanResult] = useState(null); // {newPrs, scanned}
+  const [showHistory, setShowHistory] = useState(false);
 
   const refresh = () => api.ipc.invoke('state:get').then(setStore).catch((e) => setError(e.message));
 
@@ -185,10 +187,13 @@ export function ReviewsTab({ api, s }) {
 
   if (!store) return <div style={{ color: s.ink2 }}>loading…</div>;
 
-  const prs = Object.values(store.prs).sort(
+  const all = Object.values(store.prs).sort(
     (a, b) => ORDER.indexOf(a.state) - ORDER.indexOf(b.state) || (a.timestamps.detected < b.timestamps.detected ? 1 : -1)
   );
-  const queued = prs.filter((p) => p.state === 'detected').length;
+  // dismissed/skipped are closed history — keep them out of the working view
+  const hiddenCount = all.filter((p) => HIDDEN_STATES.includes(p.state)).length;
+  const prs = showHistory ? all : all.filter((p) => !HIDDEN_STATES.includes(p.state));
+  const queued = all.filter((p) => p.state === 'detected').length;
 
   const dismissAll = () => {
     // dismissed is terminal and dedupe keeps these PRs out for good — arm first
@@ -241,15 +246,28 @@ export function ReviewsTab({ api, s }) {
           </div>
         }
       >
-        {prs.length === 0 && (
+        {prs.length === 0 && hiddenCount === 0 && (
           <div style={{ color: s.ink2 }}>
             No PRs tracked yet. Every few minutes this plugin looks through recently edited notes in your vault for
             GitHub pull-request links and queues them for review — “check for new PRs” runs one pass right now.
           </div>
         )}
+        {prs.length === 0 && hiddenCount > 0 && (
+          <div style={{ color: s.ink2 }}>
+            Nothing needs your attention. New PR links found in recently edited notes will show up here.
+          </div>
+        )}
         {prs.map((pr) => (
           <PrCard key={pr.key} api={api} s={s} pr={pr} refresh={refresh} setError={setError} />
         ))}
+        {hiddenCount > 0 && (
+          <button
+            style={{ background: 'none', border: 'none', color: s.ink2, fontSize: 12, cursor: 'pointer', padding: '8px 0 0' }}
+            onClick={() => setShowHistory(!showHistory)}
+          >
+            {showHistory ? 'hide dismissed & skipped' : `show ${hiddenCount} dismissed & skipped`}
+          </button>
+        )}
       </Panel>
     </div>
   );
