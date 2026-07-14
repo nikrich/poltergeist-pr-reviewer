@@ -80,10 +80,15 @@ async function makePlugin(overrides = {}, claudeResult = REVIEW_JSON, configPatc
 }
 
 test('sweep detects PR, queue reviews it to awaiting_approval with a draft', async () => {
-  const { plugin, storeFile, notifications, sent } = await makePlugin();
+  const { plugin, storeFile, notifications, sent, exec } = await makePlugin();
   const res = await plugin.handlers['sweep:now']();
   assert.equal(res.newPrs, 1);
   await plugin.kickQueue();
+
+  // shallow clones are single-branch: checkout must be detached, or git
+  // refuses to set up tracking for a ref outside the fetch refspec
+  const checkout = exec.calls.find((c) => c.cmd === 'gh' && c.args[1] === 'checkout');
+  assert.ok(checkout.args.includes('--detach'));
 
   const store = await loadStore(storeFile);
   const pr = store.prs['a/b#7'];
