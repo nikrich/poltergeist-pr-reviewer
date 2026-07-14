@@ -1,7 +1,7 @@
 {
   "id": "pr-reviewer",
   "name": "PR Reviewer",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Watches your vault for GitHub PR links, reviews them with headless Claude Code, and submits approved reviews via gh",
   "apiVersion": 1,
   "icon": "git-pull-request",

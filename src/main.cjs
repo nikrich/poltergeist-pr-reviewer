@@ -222,7 +222,9 @@ function createHandlers(ctx, deps = {}) {
       const env = ghEnv(resolved.token);
       let r = await exec('gh', ['repo', 'clone', repoKey, ws, '--', '--depth', '50'], { env });
       if (r.code !== 0) throw new Error(`clone failed: ${r.stderr.slice(-500)}`);
-      r = await exec('gh', ['pr', 'checkout', String(pr.number)], { cwd: ws, env });
+      // --detach: shallow clones are single-branch, so a tracking-branch
+      // checkout fails for any ref outside the fetch refspec (e.g. PR heads)
+      r = await exec('gh', ['pr', 'checkout', String(pr.number), '--detach'], { cwd: ws, env });
       if (r.code !== 0) throw new Error(`pr checkout failed: ${r.stderr.slice(-500)}`);
 
       const prompt = buildPrompt(cfg.engine, { ...pr, title: meta.title });
